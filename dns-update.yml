@@ -1,0 +1,43 @@
+---
+- hosts: ansible-control
+  environment:
+      AWS_ACCESS_KEY_ID: ASIATXNVPVFTTJ36U3DG
+      AWS_SECRET_KEY: F8v+2K7mAou1hbvNuaHIoRnO4FSMEutQ7HyeToA9
+      AWS_SESSION_TOKEN: FwoGZXIvYXdzEKr//////////wEaDOTwjC/yKdSdjLEHliLEAWvZO4Vyunh3RCJjKpICgkvEO+oMeIvJQA4cZbD2RZLDS/4ZD1dmC3G8B9E8+WRbDyquXilpgv7TlCMD4Nyuzc+7x9Od6ARWhGcfHvnvHY8>
+  tasks:
+  - name: Get AWS Instance ID
+    become: 'yes'
+    command: 'curl http://169.254.169.254/latest/meta-data/instance-id/'
+    register: curlid
+  - set_fact:
+      curlid={{ curlid.stdout }}
+  - name: Ensure tags
+    amazon.aws.ec2_tag:
+      region: us-east-1
+      resource: "{{ curlid }}"
+      state: present
+      tags: '{"AUTO_DNS_NAME":"ansible.rkedia.tigerenterprises.org", "AUTO_DNS_ZONE": "Z0330135144EGA23B3BNC"}'
+  - name: Apply IAM Role
+    community.aws.ec2_instance:
+      state: present
+      instance_ids:
+        - "{{ curlid }}"
+      instance_role: 'arn:aws:iam::256468035943:instance-profile/Tiger-Route53-Update'
+  - name: Copy file
+    become: 'yes'
+    copy:
+      src: ~/dns-update
+      dest: /var/lib/cloud/scripts/per-boot/dns-update
+      mode: preserve
+  - name: install CLI
+    run_once: true
+    become: 'yes'
+    command: 'curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"'
+  - command: 'unzip awscliv2.zip'
+  - command: 'sudo ./aws/install'
+  - name: run the dns script
+    become: 'yes'
+    command: 'sudo /var/lib/cloud/scripts/per-boot/dns-update'
+    register: print
+  - name: print output
+    debug: var=print.stdout_lines

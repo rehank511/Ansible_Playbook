@@ -1,0 +1,106 @@
+---
+- hosts: ansible-control
+  environment:
+      AWS_ACCESS_KEY_ID: ASIATXNVPVFT644L5RE3
+      AWS_SECRET_KEY: wN6+9PhejD+lq6EbxXF1hymHo0T8S2sx2/LhjMvb
+      AWS_SESSION_TOKEN: FwoGZXIvYXdzENP//////////wEaDAA1r+lpREd8FvqHuyLEAQP8AJnSPqBzmJG1VjqahuYfmOPmoIYnE7W+RAG26S/7S4/SavgvnW20lZrkGt02H5Nv3f0Khp5/OSqwEKI1qFqO7NrAbBrGLveVbKzMSwZ>
+  tasks:
+  - name: Create security group
+    amazon.aws.ec2_group:
+      name: Tiger-K8s-Worker-Ansible
+      description: groups for k8 worker ansible
+      vpc_id: vpc-0ed45050aa520767e
+      region: us-east-1
+      rules:
+        - proto: tcp
+          ports:
+            - 30000-32767
+            - 10250
+          cidr_ip: 10.0.0.0/16
+        - proto: udp
+          ports:
+            - 8285
+            - 8472
+          cidr_ip: 10.0.0.0/16
+        - proto: tcp
+          ports: 22
+          cidr_ip: 0.0.0.0/0
+      rules_egress:
+        - proto: all
+          cidr_ip: 0.0.0.0/0
+
+  - name: Create EC2 instance
+    amazon.aws.ec2:
+      key_name: COMP-175-Lab-1
+      instance_type: t2.medium
+      image: ami-0885b1f6bd170450c
+      region: us-east-1
+      group: Tiger-K8s-Worker-Ansible
+      count_tag:
+        ansible-key: k8s-worker-auto
+      exact_count: 2
+      instance_tags: '{"Name": "K8s-Worker-Ansible", "ansible-key": "k8s-worker-auto"}'
+      vpc_subnet_id: subnet-06fbe0b982751b4ab
+      assign_public_ip: yes
+      volumes:
+        - device_name: /dev/sda1
+          volume_type: gp2
+          delete_on_termination: true
+          volume_size: 8
+    register: ec2
+
+    - name: Search the worker node
+    community.aws.ec2_instance_info:
+      filters:
+        "tag:ansible-key": 'k8s-worker-auto'
+    register: ec2
+  - name: Add new instance to host group
+    add_host:
+      hostname: "{{ item.public_ip_address }}"
+      groupname: launched
+    loop: '{{ ec2.instances }}'
+
+- name: Configure instances
+  hosts: launched
+  tasks:
+  - become: 'yes'
+    apt:
+      name: chrony
+      update_cache: 'yes'
+      cache_valid_time: 86400 #Cache is valid for 1 day
+  - name: Update conf file
+    become: 'yes'
+    run_once: true
+    lineinfile:
+      path: /etc/chrony/chrony.conf
+      line: server 169.254.169.123 prefer iburst minpoll 4 maxpoll 4
+  - name: restart service
+    become: 'yes'
+    run_once: true
+    systemd:
+      state: restarted
+      daemon_reload: yes
+      name: chrony
+  - command: 'sudo apt install apt-transport-https ca-certificates curl gnupg-agent software-properties-common'
+  - shell:
+      cmd: 'curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add -'
+  - become: 'yes'
+    apt_repository:
+      repo: deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable
+      state: present
+  - become: 'yes'
+    apt:
+      update_cache: 'yes'
+      cache_valid_time: 86400 #Cache is valid for 1 day
+  - command: 'sudo apt install docker-ce docker-ce-cli containerd.io'
+  - command: 'sudo apt install curl apt-transport-https'
+  - shell:
+     cmd: 'curl -s https://packages.cloud.google.com/apt/doc/apt-key.gpg | sudo apt-key add'
+  - become: 'yes'
+    apt_repository:
+      repo: deb http://apt.kubernetes.io/ kubernetes-xenial main
+      state: present
+  - command: 'sudo apt install kubeadm kubelet kubectl kubernetes-cni'
+  - command: 'sudo swapoff -a'
+  - shell:
+      cmd: 'sudo kubeadm join 10.0.0.227:6443 --token wm4ge9.y70tgwxgf8hwr5a6  --discovery-token-ca-cert-hash sha256:3d1cc3b5f69c091503c410ef1fa78495c5a91e228da42233a5e2c4eaa1803029'

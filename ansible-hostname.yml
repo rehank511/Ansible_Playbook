@@ -1,0 +1,24 @@
+---
+- hosts: ansible-control
+  tasks:
+  - name: Set Hostname
+    become: 'yes'  # Privilege escalation, e.g. 'sudo'
+    hostname:
+      name: 'ansible-control'
+  - name: Update hosts file
+    become: 'yes'
+    replace:
+      path: /etc/hosts
+      before: '\n'
+      after: 'localhost'
+      regexp: '.*'
+      replace: ' ansible-control'
+  - name: Register hostname
+    become: 'yes'
+    command: hostnamectl
+    register: host
+  - command: cat /etc/hosts
+    register: cat
+  - name: Print Output
+    debug: var=cat.stdout_lines
+  - debug: var=host.stdout_lines

@@ -1,0 +1,15 @@
+---
+- hosts: ubuntu
+  tasks:
+  - name: Update and install fail2ban
+    become: 'yes'  # Privilege escalation, e.g. 'sudo'
+    apt:
+      name: fail2ban
+      update_cache: 'yes'
+      cache_valid_time: 86400 #Cache is valid for 1 day
+  - name: status fail2ban
+    become: 'yes'
+    command: 'systemctl status fail2ban'
+    register: status
+  - name: print status
+    debug: var=status.stdout_lines

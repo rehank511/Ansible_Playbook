@@ -1,0 +1,31 @@
+---
+- hosts: ubuntu
+  tasks:
+  - name: Update and install chrony
+    become: 'yes'  # Privilege escalation, e.g. 'sudo'
+    apt:
+      name: chrony
+      update_cache: 'yes'
+      cache_valid_time: 86400 #Cache is valid for 1 day
+  - name: Update conf file
+    become: 'yes'
+    run_once: true
+    lineinfile:
+      path: /etc/chrony/chrony.conf
+      line: server 169.254.169.123 prefer iburst minpoll 4 maxpoll 4
+  - name: restart service
+    become: 'yes'
+    run_once: true
+    systemd:
+      state: restarted
+      daemon_reload: yes
+      name: chrony
+  - name: register commands
+    become: 'yes'
+    command: 'chronyc sources -v'
+    register: source
+  - command: 'systemctl status chrony'
+    register: status
+  - name: Print Output
+    debug: var=source.stdout_lines
+  - debug: var=status.stdout_lines
